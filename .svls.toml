@@ -1,0 +1,7 @@
+[verilog]
+include_paths = ["sources_sv"]
+defines = []
+plugins = []
+
+[option]
+linter = true

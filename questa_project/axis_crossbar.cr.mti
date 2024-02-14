@@ -1,0 +1,43 @@
+{C:/gugl dick/testtask/sources_sv/axis_demux.sv} {0 {vlog -work work -vopt -sv -stats=none {C:/gugl dick/testtask/sources_sv/axis_demux.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+** Error: (vlog-13069) C:/gugl dick/testtask/sources_sv/axis_demux.sv(3): near "module": syntax error, unexpected module.
+** Error: C:/gugl dick/testtask/sources_sv/axis_crossbar_common.sv(49): (vlog-13205) Syntax error found in the scope following 'AXIS_ASSIGN'. Is there a missing '::'?
+
+} {4.0 6.0} {}} {C:/gugl dick/testtask/sources_sv/axis_crossbar_common.sv} {1 {vlog -work work -vopt -sv -covercells -cover sbceft3 -stats=none {C:\gugl dick\testtask\sources_sv\axis_crossbar_common.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+
+Top level modules:
+	--none--
+
+} {} {}} {C:/gugl dick/testtask/sources_sv/axis_crossbar.sv} {0 {vlog -work work -vopt -sv -stats=none {C:/gugl dick/testtask/sources_sv/axis_crossbar.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+** Error: (vlog-13069) C:/gugl dick/testtask/sources_sv/axis_crossbar.sv(3): near "module": syntax error, unexpected module.
+** Error: C:/gugl dick/testtask/sources_sv/axis_crossbar_common.sv(49): (vlog-13205) Syntax error found in the scope following 'AXIS_ASSIGN'. Is there a missing '::'?
+
+} {4.0 6.0} {}} {C:/gugl dick/testtask/sources_sv/axis_connect.sv} {0 {vlog -work work -vopt -sv -stats=none {C:/gugl dick/testtask/sources_sv/axis_connect.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+** Error: (vlog-13069) C:/gugl dick/testtask/sources_sv/axis_connect.sv(3): near "module": syntax error, unexpected module.
+** Error: C:/gugl dick/testtask/sources_sv/axis_crossbar_common.sv(49): (vlog-13205) Syntax error found in the scope following 'AXIS_ASSIGN'. Is there a missing '::'?
+
+} {4.0 6.0} {}} {C:/gugl dick/testtask/sources_sv/axis_buffer.sv} {1 {vlog -work work -vopt -sv -stats=none {C:/gugl dick/testtask/sources_sv/axis_buffer.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+-- Compiling module axis_buffer
+
+Top level modules:
+	axis_buffer
+
+} {} {}} {C:/gugl dick/testtask/sources_sv/axis_mux.sv} {0 {vlog -work work -vopt -sv -stats=none {C:/gugl dick/testtask/sources_sv/axis_mux.sv}
+QuestaSim-64 vlog 2021.1 Compiler 2021.01 Jan 19 2021
+-- Compiling interface AxiStream
+-- Compiling module axis_mux
+** Error: (vlog-13069) ** while parsing macro expansion: 'AXIS_ASSIGN' starting at C:/gugl dick/testtask/sources_sv/axis_mux.sv(39)
+** at C:/gugl dick/testtask/sources_sv/axis_mux.sv(39): near "source": syntax error, unexpected IDENTIFIER, expecting ';'.
+** Error: (vlog-13069) ** while parsing macro expansion: 'AXIS_ASSIGN' starting at C:/gugl dick/testtask/sources_sv/axis_mux.sv(39)
+** at C:/gugl dick/testtask/sources_sv/axis_mux.sv(39): near ".": syntax error, unexpected '.', expecting class.
+
+} {5.0 6.0 7.0 8.0} {}}
