@@ -71,7 +71,7 @@ architecture arc of l2_network_encryptor is
     constant c_bytes_rw:positive:= C_S00_AXI_DATA_WIDTH/c_byte_size;
     constant c_bytes_stream_slave:positive:= C_S00_AXIS_TDATA_WIDTH/c_byte_size;
     constant c_bytes_stream_master:positive:= C_M00_AXIS_TDATA_WIDTH/c_byte_size;
-    constant c_buffer_depth:positive:= 6;
+    constant c_buffer_depth:positive:= 7;
     constant c_input_fifo_depth:positive:= 16;
 
     -- ======= axi4 lite read / write signals ==============
@@ -179,14 +179,40 @@ architecture arc of l2_network_encryptor is
         pair_num
     :integer range 0 to c_ip_table_row_count-1 := 0;
 
+    -- ======= crc signals ==============
+    
+    type crc_calc_states is(
+        ST_CRC_WAIT,
+        ST_CRC_FIRST_2,
+        ST_CRC_2ST_6,
+        ST_CRC_3ST_6,
+        ST_CRC_LAST_2,
+        ST_CRC_ADD_LENGTH
+    );
+    signal
+        crc_calc_state
+    :crc_calc_states := ST_CRC_WAIT;
+
+    signal
+        crc_temp
+    :std_logic_vector(15 + log2(18) downto 0);
+
     -- ======= output signals ==============
     
+    signal
+        new_length,
+        new_crc
+    :std_logic_vector(15 downto 0);
+
     type output_states is(
         ST_OUT_H1,
         ST_OUT_H2,
         ST_OUT_H3,
+        ST_OUT_H4,
+        ST_OUT_H5,
         ST_OUT_INSERT,
-        ST_OUT_DATA
+        ST_OUT_DATA,
+        ST_OUT_SKIP
     );
     signal
         output_state
@@ -197,6 +223,10 @@ architecture arc of l2_network_encryptor is
     :std_matrix(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0)(c_byte_size-1 downto 0);
 
     signal
+        header_buffer_bytes_be
+    :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0);
+
+    signal
         header_buffer_bytes_last
     :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0);
 
@@ -204,10 +234,15 @@ architecture arc of l2_network_encryptor is
         ip_match_d
     :std_logic := '1';
 
+    signal
+        buffer_read_pointer
+    : integer range 0 to 7 := 0;
+
     -- ======= other signals ==============
     
     signal
-        pipeline_move
+        pipeline_move,
+        pipeline_stop
     :std_logic := '0';
 
 begin
@@ -220,7 +255,7 @@ begin
         report "The only supported value for C_M00_AXIS_TDATA_WIDTH is 64"
         severity error;
     
-    pipeline_move <= not fifo_empty and m00_axis_tready;
+    pipeline_move <= not fifo_empty and m00_axis_tready and not pipeline_stop;
     
     -- ============= axi 4 read / write ip table =================
     
@@ -397,15 +432,16 @@ begin
 
     -- ============= check table match =================
 
-    ip_receiver <= header_buffer(0)(ip_receiver'length-1 downto 0);
-    ip_sender <= header_buffer(1)(header_buffer'high downto header_buffer'high-ip_receiver'length+1);
+    header_buffer_bytes <= matrix_reshape(reverse(header_buffer), c_byte_size);
+
+    ip_receiver <= matrix_to_vector(header_buffer_bytes(1 downto 0) & header_buffer_bytes(15 downto 14));
+    ip_sender <= matrix_to_vector(header_buffer_bytes(13 downto 10));
 
     proc_table_form:process (all)
     begin
-        ip_match <= '0';
-        for i in 0 to c_ip_table_row_count-1 loop
-            ip_sender_table(i) <= ip_table(i/2);
-            ip_receiver_table(i) <= ip_table(i/2+1);
+        for i in ip_table'range loop
+            ip_sender_table(i) <= matrix_to_vector(select_sub_matrix(ip_table, i*c_ip_addr_size*2, c_ip_addr_size));
+            ip_receiver_table(i) <= matrix_to_vector(select_sub_matrix(ip_table, i*c_ip_addr_size+c_ip_addr_size, c_ip_addr_size));
         end loop;
     end process;
 
@@ -415,7 +451,7 @@ begin
             ip_match <= '1';
         elsif rising_edge(m00_axis_aclk) then
             if pipeline_move then
-                if header_buffer_first(0) then
+                if header_buffer_first(header_buffer_first'high-2) then
                     ip_match <= '0';
                     for i in 0 to c_ip_table_row_count-1 loop
                         if ip_sender = ip_sender_table(i) and ip_receiver = ip_receiver_table(i) then
@@ -428,9 +464,93 @@ begin
         end if;
     end process;
 
-    -- ============= output =================
+    -- ============= crc calculation =================
+    
+    proc_crc:process (m00_axis_aclk, m00_axis_aresetn)
+    begin
+        if not m00_axis_aresetn then
+            new_crc <= (others=>'0');
+        elsif rising_edge(m00_axis_aclk) then
+            if pipeline_move then
+                case crc_calc_state is
+                    when ST_CRC_WAIT =>
+                    crc_temp <= (others => '0');
+                    when ST_CRC_FIRST_2 =>
+                        crc_temp <= std_logic_vector(
+                            unsigned(matrix_tree_sum_u(
+                                header_buffer_bytes(header_buffer_bytes'high downto header_buffer_bytes'high-1),
+                                log2(18)
+                            ))
+                            + unsigned(crc_temp)
+                        );
+                    when ST_CRC_2ST_6 =>
+                        crc_temp <= std_logic_vector(
+                            unsigned(matrix_tree_sum_u(
+                                header_buffer_bytes(header_buffer_bytes'high downto header_buffer_bytes'high-5),
+                                log2(18)
+                            ))
+                            + unsigned(crc_temp)
+                        );
+                    when ST_CRC_3ST_6 =>
+                        crc_temp <= std_logic_vector(
+                            unsigned(matrix_tree_sum_u(
+                                header_buffer_bytes(header_buffer_bytes'high downto header_buffer_bytes'high-5),
+                                log2(18)
+                            ))
+                            + unsigned(crc_temp)
+                        );
+                    when ST_CRC_LAST_2 =>
+                        crc_temp <= std_logic_vector(
+                            unsigned(matrix_tree_sum_u(
+                                header_buffer_bytes(header_buffer_bytes'high-6 downto header_buffer_bytes'high-7),
+                                log2(18)
+                            ))
+                            + unsigned(crc_temp)
+                        );
+                    when ST_CRC_ADD_LENGTH =>
+                        crc_temp <= std_logic_vector(
+                            unsigned(matrix_tree_sum_u(
+                                vector_to_matrix(new_length, c_byte_size),
+                                log2(18)
+                            ))
+                            + unsigned(crc_temp)
+                        );
+                    when others =>
+                        null;
+                end case;
+            end if;
+        end if;
+    end process;
 
-    header_buffer_bytes <= matrix_reverse_rows(matrix_reshape(header_buffer, c_byte_size));
+    proc_crc_control:process (m00_axis_aclk, m00_axis_aresetn)
+    begin
+        if not m00_axis_aresetn then
+            new_crc <= (others=>'0');
+        elsif rising_edge(m00_axis_aclk) then
+            if pipeline_move then
+                case crc_calc_state is
+                    when ST_CRC_WAIT =>
+                        if header_buffer_first(0) then
+                            crc_calc_state <= ST_CRC_FIRST_2;
+                        end if;
+                    when ST_CRC_FIRST_2 =>
+                        crc_calc_state <= ST_CRC_2ST_6;
+                    when ST_CRC_2ST_6 =>
+                        crc_calc_state <= ST_CRC_3ST_6;
+                    when ST_CRC_3ST_6 =>
+                        crc_calc_state <= ST_CRC_LAST_2;
+                    when ST_CRC_LAST_2 =>
+                        crc_calc_state <= ST_CRC_ADD_LENGTH;
+                    when ST_CRC_ADD_LENGTH =>
+                        crc_calc_state <= ST_CRC_WAIT;
+                    when others =>
+                        crc_calc_state <= ST_CRC_WAIT;
+                end case;
+            end if;
+        end if;
+    end process;
+
+    -- ============= output =================
 
     proc_mark_last_byte:process (all)
     begin
@@ -443,113 +563,139 @@ begin
         end loop;
     end process;
     
-    proc_output:process (m00_axis_aclk, m00_axis_aresetn)
-        variable header_buffer_read_pointer : integer := 0;
-        variable insert_position : integer := 0;
-        variable output_half: std_matrix(3 downto 0)(c_byte_size-1 downto 0);
+    header_buffer_bytes_be <= matrix_to_vector(reverse(header_buffer_be));
+
+    proc_length:process (m00_axis_aclk, m00_axis_aresetn)
     begin
         if not m00_axis_aresetn then
-            ip_match_d <= '0';
+            new_length <= (others=>'0');
+        elsif rising_edge(m00_axis_aclk) then
+            if pipeline_move then
+                if header_buffer_first(header_buffer_first'high-1) then
+                    new_length <= std_logic_vector(unsigned(matrix_to_vector(header_buffer_bytes(17 downto 16)))+pair_num);
+                end if;
+            end if;
+        end if;
+    end process;
+
+    proc_output:process (m00_axis_aclk, m00_axis_aresetn)
+    begin
+        if not m00_axis_aresetn then
             m00_axis_tvalid <= '0';
         elsif rising_edge(m00_axis_aclk) then
-            ip_match_d <= ip_match;
-            if pipeline_move then
+            if pipeline_move or pipeline_stop then
                 if ip_match then
                     case output_state is
                         when ST_OUT_H1 =>
-                            m00_axis_tdata <= header_buffer(3);
-                            m00_axis_tkeep <= header_buffer_be(3);
-                            m00_axis_tvalid <= or_reduce(header_buffer_be(3));
-                            m00_axis_tlast <= header_buffer_last(3);
+                            m00_axis_tdata <= matrix_to_vector(header_buffer_bytes(7 downto 0));
+                            m00_axis_tkeep <= header_buffer_bytes_be(7 downto 0);
+                            m00_axis_tvalid <= '1';
+                            m00_axis_tlast <= '0';
                         when ST_OUT_H2 =>
-                            m00_axis_tdata <= header_buffer(3);
-                            m00_axis_tkeep <= header_buffer_be(3);
-                            m00_axis_tvalid <= or_reduce(header_buffer_be(3));
-                            m00_axis_tlast <= header_buffer_last(3);
+                            m00_axis_tdata <= matrix_to_vector(header_buffer_bytes(7 downto 0));
+                            m00_axis_tkeep <= header_buffer_bytes_be(7 downto 0);
+                            m00_axis_tvalid <= or_reduce(header_buffer_be(5));
+                            m00_axis_tlast <= '0';
                         when ST_OUT_H3 =>
-                            m00_axis_tdata(31 downto 0) <= header_buffer(3)(31 downto 0);
-                            m00_axis_tkeep(3 downto 0) <= header_buffer_be(3)(3 downto 0);
+                            m00_axis_tdata <= matrix_to_vector(header_buffer_bytes(7 downto 0));
+                            m00_axis_tdata(15 downto 0) <= new_length;
+                            m00_axis_tkeep <= header_buffer_bytes_be(7 downto 0);
+                            m00_axis_tvalid <= '1';
+                            m00_axis_tlast <= '0';
+                        when ST_OUT_H4 =>
+                            m00_axis_tdata <= matrix_to_vector(header_buffer_bytes(7 downto 0));
+                            m00_axis_tdata(15 downto 0) <= new_crc;
+                            m00_axis_tkeep <= header_buffer_bytes_be(7 downto 0);
+                            m00_axis_tvalid <= '1';
+                            m00_axis_tlast <= '0';
+                        when ST_OUT_H5 =>
+                            m00_axis_tdata(15 downto 0) <= header_buffer(5)(15 downto 0);
+                            m00_axis_tkeep(1 downto 0) <= header_buffer_be(5)(1 downto 0);
+                            m00_axis_tvalid <= '1';
                             if pair_num = 1 then
-                                m00_axis_tdata(63 downto 32) <=
-                                    matrix_to_vector(header_buffer_bytes(6 downto 4))
+                                m00_axis_tdata(63 downto 16) <=
+                                    matrix_to_vector(header_buffer_bytes(6 downto 2))
                                     & std_logic_vector(to_unsigned(pair_num, c_byte_size));
-                                m00_axis_tkeep <= header_buffer_be(3)(6 downto 4) & '1';
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(6 downto 0));
+                                m00_axis_tkeep(7 downto 2) <= header_buffer_bytes_be(6 downto 2) & "1";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(6 downto 2));
                             elsif pair_num = 2 then
-                                m00_axis_tdata(63 downto 32) <=
-                                    matrix_to_vector(header_buffer_bytes(5 downto 4))
+                                m00_axis_tdata(63 downto 16) <=
+                                    matrix_to_vector(header_buffer_bytes(5 downto 2))
                                     & std_logic_vector(to_unsigned(pair_num, c_byte_size))
                                     & x"00";
-                                m00_axis_tkeep(7 downto 4) <= header_buffer_be(3)(5 downto 4) & "11";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(5 downto 0));
+                                m00_axis_tkeep(7 downto 2) <= header_buffer_bytes_be(5 downto 2) & "11";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(5 downto 2));
                             elsif pair_num = 3 then
-                                m00_axis_tdata(63 downto 32) <=
-                                    matrix_to_vector(header_buffer_bytes(4 downto 4))
+                                m00_axis_tdata(63 downto 16) <=
+                                    matrix_to_vector(header_buffer_bytes(4 downto 2))
                                     & std_logic_vector(to_unsigned(pair_num, c_byte_size))
                                     & x"00"
                                     & x"00";
-                                m00_axis_tkeep(7 downto 4) <= header_buffer_be(3)(4 downto 4) & "111";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(4 downto 0));
+                                m00_axis_tkeep(7 downto 2) <= header_buffer_bytes_be(4 downto 2) & "111";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(4 downto 2));
                             elsif pair_num = 4 then
-                                m00_axis_tdata(63 downto 32) <=
+                                m00_axis_tdata(63 downto 16) <=
+                                    matrix_to_vector(header_buffer_bytes(3 downto 2))
+                                    & std_logic_vector(to_unsigned(pair_num, c_byte_size))
+                                    & x"00"
+                                    & x"00"
+                                    & x"00";
+                                m00_axis_tkeep(7 downto 2) <= header_buffer_bytes_be(3 downto 2) & "1111";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(3 downto 2));
+                            elsif pair_num = 5 then
+                                m00_axis_tdata(63 downto 16) <=
+                                    matrix_to_vector(header_buffer_bytes(2 downto 2))
+                                    & std_logic_vector(to_unsigned(pair_num, c_byte_size))
+                                    & x"00"
+                                    & x"00"
+                                    & x"00"
+                                    & x"00";
+                                m00_axis_tkeep(7 downto 2) <= header_buffer_bytes_be(2 downto 2) & "11111";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(2 downto 2));
+                            elsif pair_num = 6 then
+                                m00_axis_tdata(63 downto 16) <=
                                     std_logic_vector(to_unsigned(pair_num, c_byte_size))
                                     & x"00"
                                     & x"00"
+                                    & x"00"
+                                    & x"00"
                                     & x"00";
-                                m00_axis_tkeep(7 downto 4) <= (others=>'1');
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(3 downto 0));
+                                m00_axis_tkeep(7 downto 2) <= (others=>'1');
+                                m00_axis_tlast <= '0';
                             else
-                                m00_axis_tdata(63 downto 32) <= (others=>'0');
-                                m00_axis_tkeep(7 downto 4) <= (others=>'1');
-                                m00_axis_tvalid <= '1';
+                                m00_axis_tdata(63 downto 16) <= (others=>'0');
+                                m00_axis_tkeep(7 downto 2) <= (others=>'1');
                                 m00_axis_tlast <= '0';
                             end if;
                         when ST_OUT_INSERT =>
-                            if pair_num = 5 then
+                            m00_axis_tvalid <= '1';
+                            if pair_num = 7 then
                                 m00_axis_tdata <= 
-                                    matrix_to_vector(header_buffer_bytes(10 downto 4))
+                                    matrix_to_vector(header_buffer_bytes(8 downto 2))
                                     & std_logic_vector(to_unsigned(pair_num, c_byte_size));
-                                m00_axis_tkeep <= header_buffer_be(3)(4 downto 4) & "111";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(10 downto 4));
-                            elsif pair_num = 6 then
-                                m00_axis_tdata <= 
-                                    matrix_to_vector(header_buffer_bytes(9 downto 4))
-                                    & std_logic_vector(to_unsigned(pair_num, c_byte_size))
-                                    & x"00";
-                                m00_axis_tkeep <= header_buffer_be(3)(4 downto 4) & "111";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(9 downto 4));
-                            elsif pair_num = 7 then
-                                m00_axis_tdata <= 
-                                    matrix_to_vector(header_buffer_bytes(8 downto 4))
-                                    & std_logic_vector(to_unsigned(pair_num, c_byte_size))
-                                    & x"00"
-                                    & x"00";
-                                m00_axis_tkeep <= header_buffer_be(3)(4 downto 4) & "111";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(8 downto 4));
+                                m00_axis_tkeep <= header_buffer_bytes_be(8 downto 2) & "1";
+                                m00_axis_tlast <= or_reduce(
+                                    header_buffer_bytes_last(24 downto 24)
+                                    & header_buffer_bytes_last(39 downto 34));
                             elsif pair_num = 8 then
                                 m00_axis_tdata <= 
-                                    matrix_to_vector(header_buffer_bytes(7 downto 4))
+                                    matrix_to_vector(header_buffer_bytes(7 downto 2))
                                     & std_logic_vector(to_unsigned(pair_num, c_byte_size))
-                                    & x"00"
-                                    & x"00"
                                     & x"00";
-                                m00_axis_tkeep <= header_buffer_be(3)(4 downto 4) & "111";
-                                m00_axis_tvalid <= '1';
-                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(7 downto 4));
+                                m00_axis_tkeep <= header_buffer_bytes_be(7 downto 2) & "11";
+                                m00_axis_tlast <= or_reduce(header_buffer_bytes_last(7 downto 2));
+                            else
+                                m00_axis_tdata(63 downto 16) <= (others=>'0');
+                                m00_axis_tkeep(7 downto 2) <= (others=>'1');
+                                m00_axis_tlast <= '1';
                             end if;
-                            m00_axis_tvalid <= '1';
                         when ST_OUT_DATA =>
-                            m00_axis_tdata <= matrix_to_vector();
-                            m00_axis_tkeep <= ;
-                            m00_axis_tvalid <= ;
-                            m00_axis_tlast <= ;
+                            m00_axis_tdata <= matrix_to_vector(select_sub_matrix(header_buffer_bytes, buffer_read_pointer, 8));
+                            m00_axis_tkeep <= select_sub_vector(header_buffer_bytes_be, buffer_read_pointer, 8);
+                            m00_axis_tvalid <= or_reduce(select_sub_vector(header_buffer_bytes_be, buffer_read_pointer, 8));
+                            m00_axis_tlast <= or_reduce(select_sub_vector(header_buffer_bytes_last, buffer_read_pointer, 8));
+                        when ST_OUT_SKIP =>
+                            m00_axis_tvalid <= '0';
                         when others =>
                             m00_axis_tvalid <= '0';
                     end case;
@@ -560,4 +706,50 @@ begin
         end if;
     end process;
 
+    proc_out_control:process (m00_axis_aclk, m00_axis_aresetn)
+    begin
+        if not m00_axis_aresetn then
+            output_state <= ST_OUT_SKIP;
+            pipeline_stop <= '0';
+            buffer_read_pointer <= 1;
+        elsif rising_edge(m00_axis_aclk) then
+            if pipeline_move or pipeline_stop then
+                if pair_num > 6 then
+                    buffer_read_pointer <= 2;
+                else
+                    buffer_read_pointer <= 8 - pair_num;
+                end if;
+                case output_state is
+                    when ST_OUT_SKIP =>
+                        if ip_match then
+                            output_state <= ST_OUT_H1;
+                        end if;
+                    when ST_OUT_H1 =>
+                        output_state <= ST_OUT_H2;
+                    when ST_OUT_H2 =>
+                        output_state <= ST_OUT_H3;
+                    when ST_OUT_H3 =>
+                        output_state <= ST_OUT_H4;
+                    when ST_OUT_H4 =>
+                        output_state <= ST_OUT_H5;
+                        pipeline_stop <= '1';
+                    when ST_OUT_H5 =>
+                        if pair_num > 6 then
+                            output_state <= ST_OUT_INSERT;
+                        else
+                            output_state <= ST_OUT_DATA;
+                        end if;
+                        pipeline_stop <= '0';
+                    when ST_OUT_INSERT =>
+                        output_state <= ST_OUT_DATA;
+                    when ST_OUT_DATA =>
+                        if or_reduce(select_sub_vector(header_buffer_bytes_last and header_buffer_bytes_be, buffer_read_pointer, 8)) then
+                            output_state <= ST_OUT_SKIP;
+                        end if;
+                    when others =>
+                        output_state <= ST_OUT_SKIP;
+                end case;
+            end if;
+        end if;
+    end process;
 end arc;
