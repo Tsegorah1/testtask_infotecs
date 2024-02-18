@@ -467,6 +467,7 @@ begin
     -- ============= crc calculation =================
     
     proc_crc:process (m00_axis_aclk, m00_axis_aresetn)
+        variable crc_v:std_logic_vector(crc_temp'range);
     begin
         if not m00_axis_aresetn then
             new_crc <= (others=>'0');
@@ -508,13 +509,14 @@ begin
                             + unsigned(crc_temp)
                         );
                     when ST_CRC_ADD_LENGTH =>
-                        crc_temp <= std_logic_vector(
+                        crc_v := std_logic_vector(
                             unsigned(matrix_tree_sum_u(
                                 vector_to_matrix(new_length, c_byte_size),
                                 log2(18)
                             ))
                             + unsigned(crc_temp)
                         );
+                        new_crc <= not std_logic_vector(unsigned(crc_v(new_crc'range)) + unsigned(crc_v(crc_v'high downto new_crc'length)));
                     when others =>
                         null;
                 end case;
