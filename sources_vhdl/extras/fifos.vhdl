@@ -10,7 +10,7 @@
 --# fifos.vhdl - FIFOs
 --# Freely available from VHDL-extras (http://github.com/kevinpt/vhdl-extras)
 --#
---# Copyright Â© 2014 Kevin Thibedeau
+--# Copyright © 2014 Kevin Thibedeau
 --# (kevin 'period' thibedeau 'at' gmail 'punto' com)
 --#
 --# Permission is hereby granted, free of charge, to any person obtaining a

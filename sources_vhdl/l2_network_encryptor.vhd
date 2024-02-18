@@ -2,7 +2,10 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_misc.all;
- 
+
+library extras;
+use extras.fifos.fifo;
+
 use work.types_pack_old.all;
 use work.types_pack.all;
 
