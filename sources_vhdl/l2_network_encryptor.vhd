@@ -3,9 +3,6 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_misc.all;
 
-library extras;
-use extras.fifos.fifo;
-
 use work.types_pack_old.all;
 use work.types_pack.all;
 
@@ -383,7 +380,7 @@ begin
     --     o_rdata  => fifo_dout,
     --     o_rempty => fifo_empty
     -- );
-    inst_fifo:entity extras.fifo
+    inst_fifo:entity work.fifo
     generic map(
         MEM_SIZE => 16          --# Number or words in FIFO
     )
