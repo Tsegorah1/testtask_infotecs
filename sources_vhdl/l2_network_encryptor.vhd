@@ -362,23 +362,49 @@ begin
 
     -- ============= domain crossing =================
 
-    inst_afifo:entity work.afifo
+    -- inst_afifo:entity work.afifo
+    -- generic map(
+    --     DSIZE => s00_axis_tdata'length + s00_axis_tkeep'length + 1,
+    --     ASIZE => log2(c_input_fifo_depth)
+    -- )
+    -- port map(
+    --     i_wclk   => s00_axis_aclk,
+    --     i_wrst_n => s00_axis_aresetn,
+    --     i_wr     => s00_axis_tvalid,
+    --     i_wdata  => s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast,
+    --     o_wfull  => s00_axis_tready,
+
+    --     i_rclk   => m00_axis_aclk,
+    --     i_rrst_n => m00_axis_aresetn,
+    --     i_rd     => m00_axis_tready,
+    --     o_rdata  => fifo_dout,
+    --     o_rempty => fifo_empty
+    -- );
+    inst_fifo:entity work.fifo
     generic map(
-        DSIZE => s00_axis_tdata'length + s00_axis_tkeep'length + 1,
-        ASIZE => log2(c_input_fifo_depth)
+        MEM_SIZE => 16          --# Number or words in FIFO
     )
     port map(
-        i_wclk   => s00_axis_aclk,
-        i_wrst_n => s00_axis_aresetn,
-        i_wr     => s00_axis_tvalid,
-        i_wdata  => s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast,
-        o_wfull  => s00_axis_tready,
+        --# {{data|Write port}}
+        Wr_clock => s00_axis_aclk,  --# Write port clock
+        Wr_reset => not s00_axis_aresetn,  --# Asynchronous write port reset
+        We       => s00_axis_tvalid,  --# Write enable
+        Wr_data  => s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast, --# Write data into FIFO
 
-        i_rclk   => m00_axis_aclk,
-        i_rrst_n => m00_axis_aresetn,
-        i_rd     => m00_axis_tready,
-        o_rdata  => fifo_dout,
-        o_rempty => fifo_empty
+        --# {{Read port}}
+        Rd_clock => m00_axis_aclk,  --# Read port clock
+        Rd_reset => not m00_axis_aresetn,  --# Asynchronous read port reset
+        Re       => not m00_axis_tready,  --# Read enable
+        Rd_data  => fifo_dout, --# Read data from FIFO
+
+        --# {{Status}}
+        Empty => fifo_empty,     --# Empty flag
+        Full  => s00_axis_tready,     --# Full flag
+
+        Almost_empty_thresh => 0, --# Capacity level when almost empty
+        Almost_full_thresh  => 0, --# Capacity level when almost full
+        Almost_empty        => open, --# Almost empty flag 
+        Almost_full         => open  --# Almost full flag
     );
 
     -- ============= aligning =================
