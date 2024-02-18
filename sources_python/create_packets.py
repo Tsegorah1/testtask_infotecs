@@ -5,10 +5,10 @@ from scapy.layers.l2 import Ether
 from faker import Faker
 
 
-def create_random_packets(allowed_ips, allowed_number, number_of_packets):
+def create_random_packets(allowed_ips, allowed_number_of_packets, total_number_of_packets):
     packets = []
-    for i in range(number_of_packets):
-        if i < allowed_number:
+    for i in range(total_number_of_packets):
+        if i < allowed_number_of_packets:
             ip = choice(allowed_ips)
             packets.append(IP(src=ip[0], dst=ip[1]))
         else:

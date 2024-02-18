@@ -45,3 +45,7 @@ def filter_packet(packet, ips):
             return bytes(new_packet)
     if not status:
         return None
+
+
+def filter_packets(packets, ips):
+    return list(filter(lambda item: item is not None, [filter_packet((bytes(packet)), ips) for packet in packets]))
