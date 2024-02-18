@@ -1,4 +1,6 @@
 [libraries]
 work.files = [
   '**/*.vhd',
+extras.files = [
+  '**/extras/*.vhd',
 ]

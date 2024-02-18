@@ -383,7 +383,7 @@ begin
     --     o_rdata  => fifo_dout,
     --     o_rempty => fifo_empty
     -- );
-    inst_fifo:entity work.fifo
+    inst_fifo:entity extras.fifo
     generic map(
         MEM_SIZE => 16          --# Number or words in FIFO
     )
