@@ -114,6 +114,7 @@ architecture arc of l2_network_encryptor is
     -- ======= domain crossing signals =================
 
     signal
+        fifo_din,
         fifo_dout
     :std_logic_vector(s00_axis_tdata'length + s00_axis_tkeep'length + 1 - 1 downto 0);
 
@@ -362,6 +363,8 @@ begin
 
     -- ============= domain crossing =================
 
+    fifo_din <= s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast;
+
     -- inst_afifo:entity work.afifo
     -- generic map(
     --     DSIZE => s00_axis_tdata'length + s00_axis_tkeep'length + 1,
@@ -371,7 +374,7 @@ begin
     --     i_wclk   => s00_axis_aclk,
     --     i_wrst_n => s00_axis_aresetn,
     --     i_wr     => s00_axis_tvalid,
-    --     i_wdata  => s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast,
+    --     i_wdata  => fifo_din,
     --     o_wfull  => s00_axis_tready,
 
     --     i_rclk   => m00_axis_aclk,
