@@ -167,9 +167,19 @@ architecture arc of l2_network_encryptor is
     :std_logic_vector(c_ip_addr_size*c_byte_size-1 downto 0) := (others=>'0');
 
     signal
+        ip_receiver_lhalf,
+        ip_receiver_hhalf
+    :std_logic_vector(c_ip_addr_size*c_byte_size/2-1 downto 0) := (others=>'0');
+
+    signal
         ip_sender_table,
         ip_receiver_table
     :std_matrix(c_ip_table_row_count-1 downto 0)(c_ip_addr_size*c_byte_size-1 downto 0) := (others=>(others=>'0'));
+
+    signal
+        sender_matches,
+        receiver_matches
+    :std_logic_vector(c_ip_table_row_count-1 downto 0);
 
     signal
         ip_match
@@ -177,7 +187,7 @@ architecture arc of l2_network_encryptor is
 
     signal
         pair_num
-    :integer range 0 to c_ip_table_row_count-1 := 0;
+    :integer range 1 to c_ip_table_row_count := 1;
 
     -- ======= crc signals ==============
     
@@ -220,15 +230,15 @@ architecture arc of l2_network_encryptor is
 
     signal
         header_buffer_bytes
-    :std_matrix(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0)(c_byte_size-1 downto 0);
+    :std_matrix(header_buffer'length*header_buffer(0)'length/c_byte_size-1 downto 0)(c_byte_size-1 downto 0);
 
     signal
         header_buffer_bytes_be
-    :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0);
+    :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size-1 downto 0);
 
     signal
         header_buffer_bytes_last
-    :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size downto 0);
+    :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size-1 downto 0);
 
     signal
         ip_match_d
@@ -245,13 +255,21 @@ architecture arc of l2_network_encryptor is
         pipeline_stop
     :std_logic := '0';
 
+    -- ======= attributes ==============
+    
+    attribute shreg_extract : string;
+    attribute shreg_extract of header_buffer : signal is "no";
+    attribute shreg_extract of header_buffer_be : signal is "no";
+    attribute shreg_extract of header_buffer_first : signal is "no";
+    attribute shreg_extract of header_buffer_last : signal is "no";
+
 begin
 
-    assert C_S00_AXIS_TDATA_WIDTH /= 32
+    assert C_S00_AXIS_TDATA_WIDTH = 32
         report "The only supported value for C_S00_AXIS_TDATA_WIDTH is 32"
         severity error;
     
-    assert C_M00_AXIS_TDATA_WIDTH /= 64
+    assert C_M00_AXIS_TDATA_WIDTH = 64
         report "The only supported value for C_M00_AXIS_TDATA_WIDTH is 64"
         severity error;
     
@@ -347,10 +365,11 @@ begin
                     if s00_axi_rready then
                         axi4_rd_state <= ST_RD_WAIT;
                         s00_axi_rvalid <= '1';
-                        s00_axi_rdata <= matrix_to_vector(ip_table(
-                            to_integer(unsigned(axi4lite_addr_locked_rd)) + c_bytes_rw-1
-                            downto to_integer(unsigned(axi4lite_addr_locked_rd))
-                        ));
+                        s00_axi_rdata <= matrix_to_vector(
+                            select_sub_matrix(
+                                ip_table, c_ip_addr_size*to_integer(unsigned(axi4lite_addr_locked_rd)), c_ip_addr_size
+                            )
+                        );
                     end if;
                     s00_axi_arready <= '0';
                 when others=>
@@ -409,7 +428,7 @@ begin
 
     -- ============= aligning =================
 
-    process (m00_axis_aclk, m00_axis_aresetn)
+    proc_align:process (m00_axis_aclk, m00_axis_aresetn)
     begin
         if not m00_axis_aresetn then
             align_buffer_pointer <= '0';
@@ -460,12 +479,14 @@ begin
 
     header_buffer_bytes <= matrix_reshape(reverse(header_buffer), c_byte_size);
 
-    ip_receiver <= matrix_to_vector(header_buffer_bytes(1 downto 0) & header_buffer_bytes(15 downto 14));
-    ip_sender <= matrix_to_vector(header_buffer_bytes(13 downto 10));
+    ip_receiver <= matrix_to_vector(header_buffer_bytes(33 downto 30));
+    ip_sender <= matrix_to_vector(header_buffer_bytes(37 downto 34));
+    ip_receiver_lhalf <= matrix_to_vector(header_buffer_bytes(39 downto 38));
+    ip_receiver_hhalf <= matrix_to_vector(header_buffer_bytes(33 downto 32));
 
     proc_table_form:process (all)
     begin
-        for i in ip_table'range loop
+        for i in ip_sender_table'range loop
             ip_sender_table(i) <= matrix_to_vector(select_sub_matrix(ip_table, i*c_ip_addr_size*2, c_ip_addr_size));
             ip_receiver_table(i) <= matrix_to_vector(select_sub_matrix(ip_table, i*c_ip_addr_size+c_ip_addr_size, c_ip_addr_size));
         end loop;
@@ -476,13 +497,26 @@ begin
         if not m00_axis_aresetn then
             ip_match <= '1';
         elsif rising_edge(m00_axis_aclk) then
+            for i in 0 to c_ip_table_row_count-1 loop
+                if ip_sender = ip_sender_table(i) then
+                    sender_matches(i) <= '1';
+                else
+                    sender_matches(i) <= '0';
+                end if;
+                if ip_receiver_lhalf = ip_receiver_table(i)(16-1 downto 0) then
+                    receiver_matches(i) <= '1';
+                else
+                    receiver_matches(i) <= '0';
+                end if;
+            end loop;
             if pipeline_move then
                 if header_buffer_first(header_buffer_first'high-2) then
                     ip_match <= '0';
                     for i in 0 to c_ip_table_row_count-1 loop
-                        if ip_sender = ip_sender_table(i) and ip_receiver = ip_receiver_table(i) then
+                        if sender_matches(i)='1' and ip_receiver_hhalf = ip_receiver_table(i)(32-1 downto 16) and receiver_matches(i)='1' then
                             ip_match <= '1';
                             pair_num <= i+1;
+                            exit;
                         end if;
                     end loop;
                 end if;
@@ -553,7 +587,7 @@ begin
     proc_crc_control:process (m00_axis_aclk, m00_axis_aresetn)
     begin
         if not m00_axis_aresetn then
-            new_crc <= (others=>'0');
+            crc_calc_state <= ST_CRC_WAIT;
         elsif rising_edge(m00_axis_aclk) then
             if pipeline_move then
                 case crc_calc_state is
@@ -581,9 +615,15 @@ begin
     -- ============= output =================
 
     proc_mark_last_byte:process (all)
+        variable ret:integer := 0;
     begin
         for i in header_buffer_bytes_last'range loop
-            if find_highest_1(header_buffer_be(i/4)) = i then
+            for j in header_buffer_be(i/c_bytes_stream_master)'range loop
+                if header_buffer_be(i/c_bytes_stream_master)(j) = '1' then
+                    ret := i;
+                end if;
+            end loop;
+            if ret = i then
                 header_buffer_bytes_last(i) <= '1';
             else
                 header_buffer_bytes_last(i) <= '0';

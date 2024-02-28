@@ -143,7 +143,7 @@ package body types_pack is
 	end function;
 	
 	function to_complex32_matrix(Inp : complex_matrix) return complex32_matrix is
-		variable tmp : complex32_matrix(Inp'range)(Inp(0)'range); 
+		variable tmp : complex32_matrix(Inp'range)(Inp(inp'low)'range); 
 	begin
 		for i in Inp'range loop
 			tmp(i) := to_complex32_arr(Inp(i));
@@ -162,10 +162,10 @@ package body types_pack is
 	end function;
 	
 	function matrix_to_vector(inp:std_matrix) return std_logic_vector is
-		variable ret:std_logic_vector(inp'length * inp(0)'length - 1 downto 0);
+		variable ret:std_logic_vector(inp'length * inp(inp'low)'length - 1 downto 0);
 	begin
-		for i in inp'range loop
-			ret((i+1)*inp(0)'length-1 downto i*inp(0)'length) := inp(i);
+		for i in 0 to inp'length-1 loop
+			ret((i+1)*inp(inp'low)'length-1 downto i*inp(inp'low)'length) := inp(inp'low+i);
 		end loop;
 		return ret;
 	end function;
@@ -185,7 +185,7 @@ package body types_pack is
 	end function;
 
 	function matrix_reverse_rows(inp:std_matrix) return std_matrix is
-		variable ret:std_matrix(inp'range)(inp(0)'range);
+		variable ret:std_matrix(inp'range)(inp(inp'low)'range);
 	begin
 		for i in inp'range loop
 			ret(i) := inp(inp'high-i);
@@ -196,19 +196,23 @@ package body types_pack is
 	function select_sub_vector(source:std_logic_vector; pos, len: natural) return std_logic_vector is
 		variable ret : std_logic_vector(len-1 downto 0);
 	begin
-		ret := source(pos+len-1 downto pos);
+		for i in ret'range loop
+			ret(i) := source(i+pos);
+		end loop;
 		return ret;
 	end function;
 
 	function select_sub_matrix(source:std_matrix; pos, len: natural) return std_matrix is
-		variable ret : std_matrix(len-1 downto 0)(source(0)'range);
+		variable ret : std_matrix(len-1 downto 0)(source(source'low)'range);
 	begin
-		ret := source(pos+len-1 downto pos);
+		for i in ret'range loop
+			ret(i) := source(source'low+i+pos);
+		end loop;
 		return ret;
 	end function;
 
 	function reverse(source:std_matrix) return std_matrix is
-		variable ret : std_matrix(source'range)(source(0)'range);
+		variable ret : std_matrix(source'range)(source(source'low)'range);
 	begin
 		for i in source'range loop
 			ret(i) := source(source'high-i);
@@ -217,14 +221,14 @@ package body types_pack is
 	end function;
 
 	function matrix_tree_sum_u(source:std_matrix; adiitional_bits:positive) return std_logic_vector is
-		variable ret:std_logic_vector(adiitional_bits+source(0)'length-1 downto 0);
+		variable ret:std_logic_vector(adiitional_bits+source(source'low)'length-1 downto 0);
 	begin
 		if source'length = 1 then
-			ret := source(0);
+			ret := std_logic_vector(resize(unsigned(source(source'low)), ret'length));
 		else
 			ret := std_logic_vector(
-				unsigned(matrix_tree_sum_u(source(source'high downto source'length/2), adiitional_bits))
-				+ unsigned(matrix_tree_sum_u(source(source'length/2-1 downto 0), adiitional_bits))
+				unsigned(matrix_tree_sum_u(source(source'high downto source'high-source'length/2+1), adiitional_bits))
+				+ unsigned(matrix_tree_sum_u(source(source'high-source'length/2 downto source'low), adiitional_bits))
 			);
 		end if;
 		return ret;

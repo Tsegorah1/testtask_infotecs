@@ -151,7 +151,6 @@ package types_pack_old is
 	function invert_sign(source:std_logic_vector) return std_logic_vector;
 	function bit_to_int(source:std_logic) return integer;
 	function bits_tree_sum(source:std_logic_vector) return natural;
-	function find_highest_1(source:std_logic_vector) return natural;
 
 end package;
 
@@ -443,15 +442,5 @@ package body types_pack_old is
         end if;
         return 0;
     end function;
-
-	function find_highest_1(source:std_logic_vector) return natural is
-	begin
-		for i in source'length-1 downto 0 loop
-			if source(i) = '1' then
-				return i;
-			end if;
-		end loop;
-		return 0;
-	end function;
 
 end types_pack_old;

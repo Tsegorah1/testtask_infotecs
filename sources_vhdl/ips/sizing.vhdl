@@ -137,19 +137,7 @@ package sizing is
   function signed_size(n : integer) return natural;
   
   type resize_method is (truncate_LSBs, truncate_MSBs, extend_LSBs, extend_MSBs);
-  --## Resizizng function for std_ulogic_vector clearly stating how exactly the 
-  --# resizing will be done.
-  --#
-  --# Args:
-  --#   s: Vector to  resize
-  --#   new_size: New vector size
-  --#   method: Resizizng method
-  --#   extension: Bit used for extension
-  --# Returns:
-  --#   Resized vector.
-  function change_size (s : std_ulogic_vector; new_size : positive; method : resize_method;
-    extension : std_ulogic := '0' ) return std_ulogic_vector;
-    
+
   --## Resizizng function for std_logic_vector clearly stating how exactly the 
   --# resizing will be done.
   --#
@@ -273,32 +261,6 @@ package body sizing is
     end if;
   end function;
   
-  
-  --## Resizizng function for std_ulogic_vector clearly stating how exactly the 
-  --# resizing will be done.
-  function change_size (s : std_ulogic_vector; new_size : positive; method : resize_method;
-      extension : std_ulogic := '0' ) return std_ulogic_vector is
-    
-    variable v : std_ulogic_vector(new_size-1 downto 0);
-  begin
-  
-    case method is
-      when truncate_LSBs =>
-        return s( s'high downto (s'length - new_size) );
-      when truncate_MSBs =>
-        return s(new_size-1 downto 0);
-      when extend_LSBs   =>
-        v(v'high downto new_size - s'length) := s;
-        v(new_size - s'length - 1 downto 0) := (others => extension);
-        return v;
-      when extend_MSBs   =>
-        v(new_size-1 downto s'high+1) := (others => extension);
-        v(s'high downto 0) := s;
-        return v;
-    end case;
-  
-  end function;
-
   --## Resizizng function for std_logic_vector clearly stating how exactly the 
   --# resizing will be done.
   function change_size (s : std_logic_vector; new_size : positive; method : resize_method;
