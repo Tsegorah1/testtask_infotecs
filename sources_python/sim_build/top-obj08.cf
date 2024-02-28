@@ -1,0 +1,38 @@
+v 4
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/l2_network_encryptor.vhd" "1d44567dd8e7e816889f4679d4e7e15638d0c2cf" "20240218162119.461":
+  entity l2_network_encryptor at 1( 0) + 0 on 38;
+  architecture arc of l2_network_encryptor at 66( 2736) + 0 on 39;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/ips/fifos.vhdl" "beaf6c254a5edc56ccda69e996bb1429d66d1144" "20240218162119.461":
+  package fifos at 115( 6703) + 0 on 31;
+  entity simple_fifo at 219( 11172) + 0 on 32;
+  architecture rtl of simple_fifo at 250( 11968) + 0 on 33;
+  entity fifo at 365( 14734) + 0 on 34;
+  architecture rtl of fifo at 401( 15658) + 0 on 35;
+  entity packet_fifo at 646( 21718) + 0 on 36;
+  architecture rtl of packet_fifo at 684( 22711) + 0 on 37;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/ips/memory.vhdl" "fcacff849cff7e6f72d73702c9337b65293f2322" "20240218162119.461":
+  package memory at 65( 3028) + 0 on 26;
+  entity dual_port_ram at 118( 4752) + 0 on 27;
+  architecture rtl of dual_port_ram at 139( 5267) + 0 on 28;
+  entity rom at 173( 6083) + 0 on 29;
+  architecture rtl of rom at 198( 6583) + 0 on 30;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/ips/synchronizing.vhdl" "ecbb9d7591c52d603484fec5ef75385b18279a9b" "20240218162119.461":
+  package synchronizing at 59( 3415) + 0 on 19;
+  entity bit_synchronizer at 132( 5985) + 0 on 20;
+  architecture rtl of bit_synchronizer at 150( 6542) + 0 on 21;
+  entity reset_synchronizer at 176( 7240) + 0 on 22;
+  architecture rtl of reset_synchronizer at 193( 7725) + 0 on 23;
+  entity handshake_synchronizer at 210( 8132) + 0 on 24;
+  architecture rtl of handshake_synchronizer at 244( 9330) + 0 on 25;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/ips/sizing.vhdl" "351401391e0abf9123d32e36b32f0261078dc01a" "20240218162119.461":
+  package sizing at 65( 3479) + 0 on 17 body;
+  package body sizing at 182( 7100) + 0 on 18;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/old/types_pack.vhd" "3bc523eea1ff653b07f5adb431c9beed393e11b5" "20240218162119.461":
+  package types_pack at 1( 0) + 0 on 15 body;
+  package body types_pack at 53( 2623) + 0 on 16;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/old/types_pack_old.vhd" "bda9dffbd1101f49ce7dfbdfc54b97a249e56c78" "20240218162119.461":
+  package types_pack_old at 1( 0) + 0 on 13 body;
+  package body types_pack_old at 158( 7792) + 0 on 14;
+file / "/mnt/c/Users/work/Documents/test/sources_vhdl/old/PCK_CRC32_D32.vhd" "4a52a8b7de8e70d06a55767679ec3fdcd01dbb5f" "20240218162119.461":
+  package pck_crc32_d32 at 24( 1210) + 0 on 11 body;
+  package body pck_crc32_d32 at 39( 1588) + 0 on 12;
