@@ -7,15 +7,17 @@ class Generator:
     ips_string = []
     ips = []
     packets = []
+
     def __init__(self, length_of_ips, allowed_number_of_packets, total_number_of_packets):
         self.create_rand(length_of_ips, allowed_number_of_packets, total_number_of_packets)
 
-    def create_rand(self, length_of_ips, allowed_number_of_packets, total_number_of_packets ):
+    def create_rand(self, length_of_ips, allowed_number_of_packets, total_number_of_packets):
         create_random_ips(self.ips, length_of_ips)
         self.packets = create_random_packets(self.ips, allowed_number_of_packets, total_number_of_packets)
+
     def get_ips(self):
         for ip in self.ips:
-            self.ips_string.append(ip[0] + ";" + ip[1] + ";" + str(ip[2]) + "\n")
+            self.ips_string.append(ip[0] + " " + ip[1] + "\n")
         return self.ips_string
 
     def get_packets_array(self):
