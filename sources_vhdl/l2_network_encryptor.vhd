@@ -72,7 +72,6 @@ architecture arc of l2_network_encryptor is
     constant c_bytes_stream_slave:positive:= C_S00_AXIS_TDATA_WIDTH/c_byte_size;
     constant c_bytes_stream_master:positive:= C_M00_AXIS_TDATA_WIDTH/c_byte_size;
     constant c_buffer_depth:positive:= 7;
-    constant c_input_fifo_depth:positive:= 16;
 
     -- ======= axi4 lite read / write signals ==============
 
@@ -104,10 +103,6 @@ architecture arc of l2_network_encryptor is
     :std_logic_vector(C_S00_AXI_ADDR_WIDTH-1 downto 0) := (others=>'0');
 
     signal
-        be_locked_wr
-    :std_logic_vector(C_S00_AXI_DATA_WIDTH/c_byte_size-1 downto 0) := (others=>'0');
-
-    signal
         ip_wr_block
     :std_logic := '0';
 
@@ -119,7 +114,8 @@ architecture arc of l2_network_encryptor is
     :std_logic_vector(s00_axis_tdata'length + s00_axis_tkeep'length + 1 - 1 downto 0);
 
     signal
-        fifo_empty
+        fifo_empty,
+        fifo_full
     :std_logic;
 
     -- ======= aligning signals =================
@@ -155,10 +151,6 @@ architecture arc of l2_network_encryptor is
     signal
         axis_slave_first
     :std_logic := '1';
-
-    signal
-        buffer_to_align_pointer
-    :natural := 0;
 
     -- ======= ip checker signals ==============
     
@@ -242,10 +234,6 @@ architecture arc of l2_network_encryptor is
     :std_logic_vector(header_buffer'length*header_buffer(0)'length/c_byte_size-1 downto 0);
 
     signal
-        ip_match_d
-    :std_logic := '1';
-
-    signal
         buffer_read_pointer
     : integer range 0 to 7 := 0;
 
@@ -264,6 +252,8 @@ architecture arc of l2_network_encryptor is
     attribute shreg_extract of header_buffer_first : signal is "no";
     attribute shreg_extract of header_buffer_last : signal is "no";
 
+    signal bytes_to_wr_s:std_matrix(C_S00_AXI_DATA_WIDTH/c_byte_size-1 downto 0)(c_byte_size-1 downto 0);
+   
 begin
 
     assert C_S00_AXIS_TDATA_WIDTH = 32
@@ -281,6 +271,8 @@ begin
     s00_axi_bresp <= "00";
     s00_axi_rresp <= "00";
 
+    bytes_to_wr_s <= vector_to_matrix(s00_axi_wdata, c_byte_size);
+
     proc_table_wr:process (s00_axi_aclk, s00_axi_aresetn)
         variable bytes_to_wr:std_matrix(C_S00_AXI_DATA_WIDTH/c_byte_size-1 downto 0)(c_byte_size-1 downto 0);
     begin
@@ -295,35 +287,29 @@ begin
                 when ST_WR_WAIT =>
                     if s00_axi_awvalid then
                         axi4_wr_state <= ST_WR_BLOCK;
+                        ip_wr_block <= '1';
                         s00_axi_awready <= '1';
                         axi4lite_addr_locked_wr <= s00_axi_awaddr;
-                        be_locked_wr <= s00_axi_wstrb;
                     else
                         s00_axi_awready <= '0';
+                        ip_wr_block <= '0';
                     end if;
-                    ip_wr_block <= '0';
                     s00_axi_wready <= '0';
                     s00_axi_bvalid <= '0';
                 when ST_WR_BLOCK =>
                     if s00_axi_wvalid then
-                        axi4_wr_state <= ST_WR_READY;
-                        ip_wr_block <= '1';
+                        s00_axi_wready <= '1';
+                        axi4_wr_state <= ST_WR_BREADY;
+                        bytes_to_wr := vector_to_matrix(s00_axi_wdata, c_byte_size);
+                        for i in 0 to c_bytes_rw-1 loop
+                            if s00_axi_wstrb(i) then
+                                ip_table(to_integer(unsigned(axi4lite_addr_locked_wr))+i) <= bytes_to_wr(i);
+                            end if;
+                        end loop;
                     else
-                        ip_wr_block <= '0';
+                        s00_axi_wready <= '0';
                     end if;
-                    s00_axi_wready <= '0';
-                    s00_axi_awready <= '0';
-                    s00_axi_bvalid <= '0';
-                when ST_WR_READY =>
-                    axi4_wr_state <= ST_WR_BREADY;
-                    bytes_to_wr := vector_to_matrix(s00_axi_wdata, c_byte_size);
-                    for i in 0 to c_bytes_rw-1 loop
-                        if be_locked_wr(i) then
-                            ip_table(to_integer(unsigned(axi4lite_addr_locked_rd))) <= bytes_to_wr(i);
-                        end if;
-                    end loop;
                     ip_wr_block <= '1';
-                    s00_axi_wready <= '1';
                     s00_axi_awready <= '0';
                     s00_axi_bvalid <= '0';
                 when ST_WR_BREADY =>
@@ -404,30 +390,33 @@ begin
     -- );
     inst_fifo:entity work.fifo
     generic map(
-        MEM_SIZE => 16          --# Number or words in FIFO
+        MEM_SIZE => 16,          --# Number or words in FIFO
+        SYNC_READ => false
     )
     port map(
         --# {{data|Write port}}
         Wr_clock => s00_axis_aclk,  --# Write port clock
         Wr_reset => not s00_axis_aresetn,  --# Asynchronous write port reset
         We       => s00_axis_tvalid,  --# Write enable
-        Wr_data  => s00_axis_tdata & s00_axis_tkeep & s00_axis_tlast, --# Write data into FIFO
+        Wr_data  => s00_axis_tlast & s00_axis_tkeep & s00_axis_tdata, --# Write data into FIFO
 
         --# {{Read port}}
         Rd_clock => m00_axis_aclk,  --# Read port clock
         Rd_reset => not m00_axis_aresetn,  --# Asynchronous read port reset
-        Re       => not m00_axis_tready,  --# Read enable
+        Re       => pipeline_move,  --# Read enable
         Rd_data  => fifo_dout, --# Read data from FIFO
 
         --# {{Status}}
         Empty => fifo_empty,     --# Empty flag
-        Full  => s00_axis_tready,     --# Full flag
+        Full  => fifo_full,     --# Full flag
 
         Almost_empty_thresh => 0, --# Capacity level when almost empty
         Almost_full_thresh  => 0, --# Capacity level when almost full
         Almost_empty        => open, --# Almost empty flag 
         Almost_full         => open  --# Almost full flag
     );
+
+    s00_axis_tready <= not fifo_full;
 
     -- ============= aligning =================
 
@@ -441,13 +430,16 @@ begin
                 align_buffer(
                     (bit_to_int(align_buffer_pointer)+1)*C_S00_AXIS_TDATA_WIDTH-1
                     downto (bit_to_int(align_buffer_pointer)*C_S00_AXIS_TDATA_WIDTH)
-                ) <= fifo_dout(fifo_dout'high downto s00_axis_tkeep'length+1);
+                ) <= fifo_dout(s00_axis_tdata'range);
+                if not align_buffer_pointer then
+                    align_buffer_be <= ((others => '0') );
+                end if;
                 align_buffer_be(
                     (bit_to_int(align_buffer_pointer)+1)*s00_axis_tkeep'length-1
                     downto (bit_to_int(align_buffer_pointer)*s00_axis_tkeep'length)
-                ) <= fifo_dout(s00_axis_tkeep'length downto 1);
-                align_buffer_last <= fifo_dout(0);
-                if fifo_dout(0) then
+                ) <= fifo_dout(s00_axis_tkeep'length+s00_axis_tdata'length-1 downto s00_axis_tdata'length);
+                align_buffer_last <= fifo_dout(fifo_dout'high);
+                if fifo_dout(fifo_dout'high) then
                     align_buffer_pointer <= '0';
                 else
                     align_buffer_pointer <= not align_buffer_pointer;
